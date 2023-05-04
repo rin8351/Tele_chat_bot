@@ -77,7 +77,7 @@ class SetStyleStates(StatesGroup):
 async def export_message_history(client,group,file_path2):
     # Define the date range for which you want to export messages
     utc = pytz.UTC
-    start_date = datetime.datetime.now(utc) - datetime.timedelta(days=3)
+    start_date = datetime.datetime.now(utc) - datetime.timedelta(days=1)
     end_date = datetime.datetime.now(utc)
     messages = []
 
