@@ -1,0 +1,14 @@
+{
+    "api_id":12345678 ,
+    "api_hash": "",
+	"phone_number": "",
+	"username":"",
+    "password": "none",
+    "YOUR_PRIVATE_CHANNEL": "",
+	"chat_origin_mess": "1369370434",
+	"YOUR_ADMIN_CHAT_ID":38470768,
+	"CHANNEL_to_send":"",
+	"OPENAI_API_KEY": "",
+	"TELEGRAM_BOT_TOKEN":""	
+	
+}
