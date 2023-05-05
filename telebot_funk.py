@@ -176,23 +176,33 @@ async def long_running_function(result_queue, last_filter_time, now,client):
         result_queue.put((summary_with_links,result_of_none))
 
 def replace_id_exter_links(text_with_names):
+    skip_first_line = [True]  # Using a list to make it mutable
 
     def replace_id_with_link(match):
+        if skip_first_line[0]:
+            skip_first_line[0] = False
+            return match.group(0)
+
         message_id = match.group(1)
-        first_word = match.group(2)
-        rest_of_line = match.group(3)
-        return f'[{first_word}](https://t.me/c/chat_origin_mess/{message_id}){rest_of_line}'
+        rest_of_line = match.group(2)
+        words = rest_of_line.split()
+        replaced = False
+        for i, word in enumerate(words):
+            if len(word) > 3:
+                words[i] = f'[{word}](https://t.me/c/chat_origin_mess/{message_id})'
+                replaced = True
+                break
+        if not replaced:
+            words.insert(0, f'[{words[0]}](https://t.me/c/chat_origin_mess/{message_id})')
+        return ' '.join(words)
 
     def replace_external_links(match):
         external_link = match.group(1)
         rest_of_line = match.group(2)
         return f'{rest_of_line} [Здесь ссылка]({external_link})'
 
-    # Replace external links with the word "Link" with a hyperlink, put at the end of the line
     summary_with_external_links = re.sub(r'(https?://\S+)(.*)', replace_external_links, text_with_names)
-
-    # Replace message IDs with links inside the channel
-    summary_with_links = re.sub(r'(\d+): (\w+)(.*)', replace_id_with_link, summary_with_external_links)
+    summary_with_links = re.sub(r'(\d+):(.*)', replace_id_with_link, summary_with_external_links)
 
     return summary_with_links
 
