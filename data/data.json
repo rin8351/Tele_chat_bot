@@ -9,6 +9,8 @@
 	"YOUR_ADMIN_CHAT_ID":38470768,
 	"CHANNEL_to_send":"",
 	"OPENAI_API_KEY": "",
-	"TELEGRAM_BOT_TOKEN":""	
-	
+	"TELEGRAM_BOT_TOKEN":"",
+	"default_prompt": "",
+	"default_style": "",
+	"summarization_prompt": ""
 }

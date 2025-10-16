@@ -23,6 +23,16 @@ async def send_request_to_chatgpt(result_queue,constraints,filtered_data,style):
     OPENAI_API_KEY = data['OPENAI_API_KEY']
     if OPENAI_API_KEY == "":
         raise Exception("Необходимо установить API ключ OpenAI")
+    
+    # Load summarization prompt from config with default
+    summarization_prompt_template = data.get('summarization_prompt', 
+        "Сделать суммаризацию текста. Не делать выводов. Сохранять id сообщения в начале строки. " +
+        "Если информация дается больше чем в одном id сообщении, то оставлять только первый id. " +
+        "Ссылки на внешние ресурсы нужно ставить в конце строки. Убрать все фразы, где говорится " +
+        "что Нет полезной информации, что в чате ругаются или болтают неконструктивно и так далее. " +
+        "Но если в суммаризации совсем нет никакой полезной информации, тогда можно написать один раз об этом. " +
+        "Пример стиля и желаемого результата: {style} Строки из примера нельзя повторять и включать в суммаризацию. " +
+        "Вот текст для суммаризации:\n{text}")
 
     # Формирование текста чата
 
@@ -87,7 +97,7 @@ async def send_request_to_chatgpt(result_queue,constraints,filtered_data,style):
         summaries = []
 
         for summary_part in summary_parts:
-            request_text = f"Сделать суммаризацию текста. Не делать выводов. Сохранять id сообщения в начале строки. Если информация дается больше чем в одном id сообщении, то оставлять только первый id. Ссылки на внешние ресурсы нужно ставить в конце строки. Убрать все фразы, где говорится что Нет полезной информации, что в чате ругаются или болтают неконструктивно и так далее. Но если в суммаризации совсем нет никакой полезной информации, тогда можно написать один раз об этом. Пример стиля и желаемого результата: {style} Строки из примера нельзя повторять и включать в суммаризацию. Вот текст для суммаризации:\n{summary_part}"
+            request_text = summarization_prompt_template.format(style=style, text=summary_part)
             summary = await send_request_to_chatgpt_funk(api_key, request_text, constraints)
             summaries.append(summary)
 

@@ -29,19 +29,21 @@ from aiogram.dispatcher.filters import Command
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage 
 
-prompt = ''
 schedule_times = ['00:00','09:00', '12:00', '17:00', '21:00' ,'23:59']
 bot_is_running = False
 chat_id_in_bot = None
 bot_busy = False
 last_filter_time = schedule_times[0]
-style = "AiDoge-миллионеры клеймят свои токены и несут их в стакан который день подряд. Новый мемкоин разжигает и без того огромную жадность на рынке. В сравнении с тем, что дал Arbitrum - это копейки, но стоит ли отказываться от бесплатного бонуса? 😏 Поползли слухи, что биржа Binance отменила ограничение в $10.000 для пользователей из РФ. Официального заявления вроде бы не было, но представитель биржи сказал, что все ограничения соблюдаются. HotBit решили поторговать невыпущенным токеном L0. Команде L0 пришлось отдуваться - говорят, что никто не знает, когда будет токен. Новая статья Артура Хэйеса «Ликвидность на выход». Aptos запустили делегированный стейкинг. Можно отдать  свои токены в оборот «владельцам NYM-инсайдов». Они похолдят их за вас. 😄На ОКХ появилась странная страница о том, как захантить дроп от L0."
 
 path = 'data'
 file = 'data.json'
 file_path = os.path.join(path, file)
 with open(file_path, 'r', encoding='utf-8') as f:
     data = json.load(f)
+
+# Load prompt and style from config with defaults
+prompt = data.get('default_prompt', '')
+style = data.get('default_style', 'Example style: Clear, concise summaries with key points highlighted.')
 
 path2 = 'data'
 file2 = 'result.json'
@@ -189,11 +191,11 @@ def replace_id_exter_links(text_with_names):
         replaced = False
         for i, word in enumerate(words):
             if len(word) > 3:
-                words[i] = f'[{word}](https://t.me/c/chat_origin_mess/{message_id})'
+                words[i] = f'[{word}](https://t.me/c/{chat_origin_mess}/{message_id})'
                 replaced = True
                 break
         if not replaced:
-            words.insert(0, f'[{words[0]}](https://t.me/c/chat_origin_mess/{message_id})')
+            words.insert(0, f'[{words[0]}](https://t.me/c/{chat_origin_mess}/{message_id})')
         return ' '.join(words)
 
     def replace_external_links(match):

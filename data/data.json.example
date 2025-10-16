@@ -1,0 +1,18 @@
+{
+    "api_id": "YOUR_TELEGRAM_API_ID",
+    "api_hash": "YOUR_TELEGRAM_API_HASH",
+    "phone_number": "+1234567890",
+    "username": "your_username",
+    "password": "your_2fa_password_if_enabled",
+    "YOUR_PRIVATE_CHANNEL": "Name of the channel/group to monitor",
+    "chat_origin_mess": "CHAT_ID_FOR_LINKS",
+    "YOUR_ADMIN_CHAT_ID": "YOUR_TELEGRAM_USER_ID",
+    "CHANNEL_to_send": "CHANNEL_ID_TO_SEND_SUMMARIES",
+    "TELEGRAM_BOT_TOKEN": "YOUR_BOT_TOKEN_FROM_BOTFATHER",
+    "OPENAI_API_KEY": "YOUR_OPENAI_API_KEY",
+    "default_prompt": "You are a helpful assistant that summarizes Telegram conversations.",
+    "default_style": "AiDoge-миллионеры клеймят свои токены и несут их в стакан который день подряд. Новый мемкоин разжигает и без того огромную жадность на рынке. В сравнении с тем, что дал Arbitrum - это копейки, но стоит ли отказываться от бесплатного бонуса? ",
+    "summarization_prompt": "Сделать суммаризацию текста. Не делать выводов. Сохранять id сообщения в начале строки. Если информация дается больше чем в одном id сообщении, то оставлять только первый id. Ссылки на внешние ресурсы нужно ставить в конце строки. Убрать все фразы, где говорится что Нет полезной информации, что в чате ругаются или болтают неконструктивно и так далее. Но если в суммаризации совсем нет никакой полезной информации, тогда можно написать один раз об этом. Пример стиля и желаемого результата: {style} Строки из примера нельзя повторять и включать в суммаризацию. Вот текст для суммаризации:\n{text}"
+
+}
+
