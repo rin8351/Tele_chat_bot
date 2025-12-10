@@ -1,12 +1,12 @@
-# Telegram Group Summarization Bot 🤖
+# Telegram Group Summarization Bot
 
 An intelligent Telegram bot that monitors group conversations and generates AI-powered summaries using OpenAI's GPT. The project was written in 2023, so it uses GPT-3.5.
 
-## 📋 Overview
+## Overview
 
 This bot was created to help group administrators track important information in high-traffic Telegram groups. It automatically collects messages, filters them by time intervals, and creates concise summaries with links to original messages. The summaries are then published to a specified channel on a customizable schedule.
 
-## ✨ Features
+## Features
 
 - **Automated Message Collection**: Monitors Telegram groups and collects messages within specified time intervals
 - **AI-Powered Summarization**: Uses OpenAI's GPT to create intelligent summaries of conversations
@@ -16,7 +16,7 @@ This bot was created to help group administrators track important information in
 - **State Management**: Tracks bot status and prevents concurrent operations
 - **User Authentication**: Secure Telegram client authorization with 2FA support
 
-## 🛠️ Technologies
+## Technologies
 
 - **[Aiogram](https://docs.aiogram.dev/)** - Modern Telegram Bot framework
 - **[Telethon](https://docs.telethon.dev/)** - Telegram client for message collection
@@ -24,7 +24,7 @@ This bot was created to help group administrators track important information in
 - **Python asyncio** - Asynchronous programming for efficient operation
 - **Docker** - Containerization support
 
-## 📦 Installation
+## Installation
 
 ### Prerequisites
 
@@ -104,7 +104,7 @@ build.bat
 run.bat
 ```
 
-## 🎮 Bot Commands
+## Bot Commands
 
 ### Basic Commands
 
@@ -122,7 +122,7 @@ run.bat
 - `/update_schedule` - Update summary generation times (format: `09:00, 12:00, 17:00, 21:00`)
 - `/see_schedule` - View current schedule
 
-## 📖 How to Get Telegram API Credentials
+## How to Get Telegram API Credentials
 
 1. **API ID and Hash**: 
    - Visit https://my.telegram.org/apps
@@ -143,7 +143,7 @@ run.bat
    - Visit https://platform.openai.com/api-keys
    - Create new secret key
 
-## 🔄 Workflow
+## Workflow
 
 1. Bot connects to Telegram as a client using Telethon
 2. At scheduled times, it collects messages from the specified group
@@ -152,36 +152,36 @@ run.bat
 5. Summary is formatted with links to original messages
 6. Final summary is published to the target channel
 
-## 🔒 Security Notes
+## Security Notes
 
 - Never commit `data/data.json` to version control
 - Keep your session files private
 - Regularly rotate your API keys
 - Use environment variables for sensitive data in production
 
-## 📝 Example Use Cases
+## Example Use Cases
 
 - **Crypto/Trading Groups**: Monitor market discussions and news
 - **Tech Communities**: Stay updated with technical discussions
 - **News Aggregation**: Collect and summarize news from various sources
 - **Team Communication**: Get daily digests of team conversations
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Feel free to:
 - Report bugs
 - Suggest new features
 - Submit pull requests
 
-## 📄 License
+## License
 
 This project is open source and available for personal and commercial use.
 
-## 👤 Author
+## Author
 
 Created by [@rin8351](https://github.com/rin8351)
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - Thanks to the Telegram Bot API and Telethon teams
 - OpenAI for providing the GPT API
