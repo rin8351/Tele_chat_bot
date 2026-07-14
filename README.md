@@ -1,192 +1,160 @@
 # Telegram Group Summarization Bot
 
-An intelligent Telegram bot that monitors group conversations and generates AI-powered summaries using OpenAI's GPT. The project was written in 2023, so it uses GPT-3.5.
+Scheduled digests for high-traffic Telegram groups: collect messages with a user session (Telethon), summarize with GPT, post a linked digest to a separate chat via a Bot API bot.
 
-## Overview
+> **Project status:** built in **2023** as a working prototype for a **Russian-speaking client** and a private, Russian-language crypto discussion chat. Dependencies are intentionally left on the original stack (Aiogram 2, OpenAI SDK 0.27, GPT-3.5). This is portfolio / archival code, not a maintained SaaS product. There is **no live demo** — access to the original group expired long ago.
 
-This bot was created to help group administrators track important information in high-traffic Telegram groups. It automatically collects messages, filters them by time intervals, and creates concise summaries with links to original messages. The summaries are then published to a specified channel on a customizable schedule.
+## Why it exists
+
+A Russian-speaking admin of a closed, very active chat needed **periodic digests** without reading the full firehose. The bot account (or a volunteer with membership) can read the source group; summaries are delivered to a **separate destination chat/channel** that the admin actually follows.
+
+The source chat was crypto-oriented and full of niche jargon — even as a native Russian speaker, the terminology was dense. Prompts and style examples were written in **Russian** for that deployment so summaries kept ticker names, slang, and message IDs for deep links, instead of rewriting everything into generic “news speak.” Operator-facing bot replies in this repo are also in Russian.
+
+`data/data.json.example` uses **English** prompt templates so international readers can follow the instructions; swap them to Russian (or any language) for a real deployment.
+## How it works
+
+1. Authorize a **Telegram user client** (Telethon) — needed for private groups a normal bot may not fully read.
+2. At each scheduled time, pull recent messages and keep only the current time window.
+3. Send text to **GPT-3.5** in message-aware chunks (large chats exceeded a single context window).
+4. Turn retained message IDs into `t.me/c/...` links.
+5. Publish the digest to `CHANNEL_to_send`, then a short **metrics** follow-up (message count, tokens, duration); status pings go to the operator chat.
+
+Default schedule slots: `00:00`, `09:00`, `12:00`, `17:00`, `21:00`, `23:59` (editable at runtime via `/update_schedule`).
 
 ## Features
 
-- **Automated Message Collection**: Monitors Telegram groups and collects messages within specified time intervals
-- **AI-Powered Summarization**: Uses OpenAI's GPT to create intelligent summaries of conversations
-- **Customizable Schedule**: Set multiple times throughout the day for automatic summary generation
-- **Flexible Configuration**: Customize AI prompts and writing style to fit your needs
-- **Smart Linking**: Automatically adds links to original messages in summaries
-- **State Management**: Tracks bot status and prevents concurrent operations
-- **User Authentication**: Secure Telegram client authorization with 2FA support
+- Time-window collection from a named private group/channel
+- Multi-pass GPT summarization for long threads
+- Deep links back to original messages
+- Runtime control: prompt, writing style, schedule
+- **Admin ACL** — only allowlisted Telegram user ids can run control commands
+- **Run metrics** posted to the digest channel after each summary (messages processed, token usage, duration)
+- Docker volume mount for config and session files
+- Telethon login with SMS code file drop + optional 2FA
 
-## Technologies
+## What an output looked like (illustrative)
 
-- **[Aiogram](https://docs.aiogram.dev/)** - Modern Telegram Bot framework
-- **[Telethon](https://docs.telethon.dev/)** - Telegram client for message collection
-- **[OpenAI API](https://platform.openai.com/)** - GPT-3.5 for text summarization
-- **Python asyncio** - Asynchronous programming for efficient operation
-- **Docker** - Containerization support
+No real export is available anymore. Below is a **synthetic** example in the same spirit as the original crypto digests (jargon kept on purpose):
 
-## Installation
+```text
+14:00–17:00
+
+[12841](https://t.me/c/xxxxxxxxxx/12841) листинг XYZ на второй CEX слили в стакан за час, обсуждают wash trading
+[12855](https://t.me/c/xxxxxxxxxx/12855) [12856](https://t.me/c/xxxxxxxxxx/12856) киты забрали аирдроп и дампят в спот; кто-то ждёт ретест 0.42
+[12870](https://t.me/c/xxxxxxxxxx/12870) слух про снапшот DAO — без пруфа, в тред не подтвердили
+```
+
+## Known limitations (honest)
+
+- Config lives in `data/data.json` (not env vars yet). See `.env.example` for the secret inventory.
+- Schedule / prompt changes from bot commands are **in-memory** and reset on restart.
+- OpenAI / Aiogram APIs have moved on since 2023; upgrading would be a separate modernization pass.
+
+Text is packed by **whole Telegram messages** first; only oversized single messages fall back to paragraphs → lines → sentences → word boundaries.
+
+## Tech stack
+
+| Piece | Version era |
+|-------|-------------|
+| Python | 3.8+ |
+| [Aiogram](https://docs.aiogram.dev/) | 2.25 |
+| [Telethon](https://docs.telethon.dev/) | 1.28 |
+| OpenAI API | `gpt-3.5-turbo` via `openai` 0.27 / `openai_async` |
+| Docker | optional runtime |
+
+## Setup
 
 ### Prerequisites
 
-- Python 3.8 or higher
-- Telegram API credentials (api_id, api_hash)
-- Telegram Bot Token (from [@BotFather](https://t.me/botfather))
-- OpenAI API Key
+- Python 3.8+
+- Telegram `api_id` / `api_hash` from [my.telegram.org/apps](https://my.telegram.org/apps)
+- Bot token from [@BotFather](https://t.me/botfather)
+- OpenAI API key
+- Membership (or equivalent access) in the source group
 
-### Local Setup
+### Local
 
-1. Clone the repository:
 ```bash
 git clone https://github.com/rin8351/Tele_chat_bot.git
 cd Tele_chat_bot
-```
-
-2. Install dependencies:
-```bash
 pip install -r requirements.txt
-```
-
-3. Create configuration file:
-```bash
 cp data/data.json.example data/data.json
-```
-
-4. Edit `data/data.json` with your credentials:
-```json
-{
-    "api_id": "YOUR_TELEGRAM_API_ID",
-    "api_hash": "YOUR_TELEGRAM_API_HASH",
-    "phone_number": "+1234567890",
-    "username": "your_username",
-    "password": "your_2fa_password_if_enabled",
-    "YOUR_PRIVATE_CHANNEL": "Name of the channel/group to monitor",
-    "chat_origin_mess": "CHAT_ID_FOR_LINKS",
-    "YOUR_ADMIN_CHAT_ID": "YOUR_TELEGRAM_USER_ID",
-    "CHANNEL_to_send": "CHANNEL_ID_TO_SEND_SUMMARIES",
-    "TELEGRAM_BOT_TOKEN": "YOUR_BOT_TOKEN_FROM_BOTFATHER",
-    "OPENAI_API_KEY": "YOUR_OPENAI_API_KEY",
-    "default_prompt": "System prompt for AI (optional)",
-    "default_style": "Example text showing desired writing style (optional)",
-    "summarization_prompt": "Custom prompt template for summarization (optional)"
-}
-```
-
-**Configuration Fields:**
-- `default_prompt` - System prompt for OpenAI (constraints), can be changed via `/set_prompt`
-- `default_style` - Example text showing the desired writing style, can be changed via `/set_style`
-- `summarization_prompt` - Template for summarization instructions. Should include `{style}` and `{text}` placeholders
-
-All prompt-related fields are optional. If not provided, default values will be used.
-
-5. Run the bot:
-```bash
+# edit data/data.json with real credentials
 python telebot_funk.py
 ```
 
-### Docker Setup
+On first Telethon login, write the SMS code into `data/sms_code.txt` when prompted.
+
+### Configuration (`data/data.json`)
+
+| Key | Meaning |
+|-----|---------|
+| `api_id`, `api_hash`, `phone_number`, `username`, `password` | Telethon user auth (password = 2FA if enabled) |
+| `YOUR_PRIVATE_CHANNEL` | **Display name** of the source group to scrape |
+| `chat_origin_mess` | Numeric chat id fragment used in `https://t.me/c/{id}/{msg}` links |
+| `YOUR_ADMIN_CHAT_ID` | Your Telegram **user id** (operator). Used for startup notices **and** as the primary ACL allowlist entry |
+| `ALLOWED_ADMIN_IDS` | Optional list of extra Telegram user ids allowed to control the bot |
+| `CHANNEL_to_send` | Where digests are posted (chat/channel id the bot can write to) |
+| `TELEGRAM_BOT_TOKEN` | Aiogram bot |
+| `OPENAI_API_KEY` | OpenAI |
+| `default_prompt` | System constraints for the model |
+| `default_style` | Short style sample the summarizer should imitate |
+| `summarization_prompt` | Template with `{style}` and `{text}` placeholders |
+
+Prompt fields can also be changed at runtime with bot commands. The example file is in English; the original client used Russian prompts for Russian chat digests.
+
+**Do not commit** `data/data.json`, `*.session`, or `data/sms_code.txt` — they are gitignored.
+
+### Docker
 
 ```bash
-# Build the image
-docker build -t telegram-summarizer .
-
-# Run the container
-docker run -d -v $(pwd)/data:/app/data telegram-summarizer
-```
-
-Or use the provided scripts:
-```bash
-# Linux/Mac
-sh build.sh
-sh run.sh
+# Linux / macOS
+sh build.sh    # image: telegram-summarizer
+sh run.sh      # mounts ./data → /app/data
 
 # Windows
 build.bat
 run.bat
+
+# logs
+sh logs.sh
 ```
 
-## Bot Commands
+Manual equivalent:
 
-### Basic Commands
+```bash
+docker build -t telegram-summarizer .
+docker run -d --name telegram-summarizer \
+  -v "$(pwd)/data:/app/data" \
+  telegram-summarizer
+```
 
-- `/start` - Initialize the bot and see welcome message
-- `/start_bot` - Start the automatic summarization process
-- `/stop_bot` - Stop the bot from generating summaries
-- `/check_bot` - Check current bot status (running/stopped/busy)
+## Bot commands
 
-### Configuration Commands
+| Command | Action |
+|---------|--------|
+| `/start` | Welcome |
+| `/start_bot` | Start scheduler + Telethon auth if needed |
+| `/stop_bot` | Stop summarization loop |
+| `/check_bot` | running / stopped / busy |
+| `/set_prompt` / `/see_prompt` | Edit / view system prompt |
+| `/set_style` / `/see_style` | Edit / view style sample |
+| `/update_schedule` / `/see_schedule` | Edit / view `HH:MM` slots (`09:00, 12:00, 17:00`) |
 
-- `/set_prompt` - Set custom prompt for AI summarization
-- `/see_prompt` - View current prompt
-- `/set_style` - Set writing style example for summaries
-- `/see_style` - View current style example
-- `/update_schedule` - Update summary generation times (format: `09:00, 12:00, 17:00, 21:00`)
-- `/see_schedule` - View current schedule
+## Credentials cheat sheet
 
-## How to Get Telegram API Credentials
+1. **API ID / hash** — [my.telegram.org/apps](https://my.telegram.org/apps)
+2. **Bot token** — [@BotFather](https://t.me/botfather) → `/newbot`
+3. **Chat IDs** — helpers like [@userinfobot](https://t.me/userinfobot) / similar; for private links, `chat_origin_mess` is the id without the `-100` prefix used in `t.me/c/...`
+4. **OpenAI** — [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
 
-1. **API ID and Hash**: 
-   - Visit https://my.telegram.org/apps
-   - Log in with your phone number
-   - Create a new application
-   - Copy `api_id` and `api_hash`
+## Security
 
-2. **Bot Token**:
-   - Message [@BotFather](https://t.me/botfather)
-   - Create new bot with `/newbot`
-   - Copy the token provided
-
-3. **Chat IDs**:
-   - For groups: Use [@username_to_id_bot](https://t.me/username_to_id_bot)
-   - For private channels: Get the ID from channel link (remove `-100` prefix for configuration)
-
-4. **OpenAI API Key**:
-   - Visit https://platform.openai.com/api-keys
-   - Create new secret key
-
-## Workflow
-
-1. Bot connects to Telegram as a client using Telethon
-2. At scheduled times, it collects messages from the specified group
-3. Messages are filtered by time intervals
-4. Text is sent to OpenAI for summarization
-5. Summary is formatted with links to original messages
-6. Final summary is published to the target channel
-
-## Security Notes
-
-- Never commit `data/data.json` to version control
-- Keep your session files private
-- Regularly rotate your API keys
-- Use environment variables for sensitive data in production
-
-## Example Use Cases
-
-- **Crypto/Trading Groups**: Monitor market discussions and news
-- **Tech Communities**: Stay updated with technical discussions
-- **News Aggregation**: Collect and summarize news from various sources
-- **Team Communication**: Get daily digests of team conversations
-
-## Contributing
-
-Contributions are welcome! Feel free to:
-- Report bugs
-- Suggest new features
-- Submit pull requests
+- Never commit secrets or Telethon session files
+- Prefer a dedicated user account for scraping, not a personal main account
+- Treat digests as sensitive if the source group is private
+- Follow [Telegram Terms of Service](https://telegram.org/tos) and group privacy expectations
 
 ## License
 
-This project is open source and available for personal and commercial use.
-
-## Author
-
-Created by [@rin8351](https://github.com/rin8351)
-
-## Acknowledgments
-
-- Thanks to the Telegram Bot API and Telethon teams
-- OpenAI for providing the GPT API
-- All contributors and users of this project
-
----
-
-**Note**: This bot requires proper authorization and admin rights in the monitored group. Always respect user privacy and follow Telegram's Terms of Service.
+MIT — see [LICENSE](LICENSE).

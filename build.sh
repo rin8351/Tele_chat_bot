@@ -1,2 +1,2 @@
-# build the current docker container
-docker build -t to_chat .
+# Build the Docker image
+docker build -t telegram-summarizer .

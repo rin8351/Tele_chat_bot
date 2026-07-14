@@ -2,6 +2,9 @@
 data/data.json
 data/sms_code.txt
 data/result.json
+.env
+.env.local
+*.env
 
 # Telethon session files
 *.session

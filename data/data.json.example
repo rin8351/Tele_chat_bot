@@ -6,13 +6,12 @@
     "password": "your_2fa_password_if_enabled",
     "YOUR_PRIVATE_CHANNEL": "Name of the channel/group to monitor",
     "chat_origin_mess": "CHAT_ID_FOR_LINKS",
-    "YOUR_ADMIN_CHAT_ID": "YOUR_TELEGRAM_USER_ID",
+    "YOUR_ADMIN_CHAT_ID": "123456789",
+    "ALLOWED_ADMIN_IDS": [],
     "CHANNEL_to_send": "CHANNEL_ID_TO_SEND_SUMMARIES",
     "TELEGRAM_BOT_TOKEN": "YOUR_BOT_TOKEN_FROM_BOTFATHER",
     "OPENAI_API_KEY": "YOUR_OPENAI_API_KEY",
-    "default_prompt": "You are a helpful assistant that summarizes Telegram conversations.",
-    "default_style": "AiDoge-миллионеры клеймят свои токены и несут их в стакан который день подряд. Новый мемкоин разжигает и без того огромную жадность на рынке. В сравнении с тем, что дал Arbitrum - это копейки, но стоит ли отказываться от бесплатного бонуса? ",
-    "summarization_prompt": "Сделать суммаризацию текста. Не делать выводов. Сохранять id сообщения в начале строки. Если информация дается больше чем в одном id сообщении, то оставлять только первый id. Ссылки на внешние ресурсы нужно ставить в конце строки. Убрать все фразы, где говорится что Нет полезной информации, что в чате ругаются или болтают неконструктивно и так далее. Но если в суммаризации совсем нет никакой полезной информации, тогда можно написать один раз об этом. Пример стиля и желаемого результата: {style} Строки из примера нельзя повторять и включать в суммаризацию. Вот текст для суммаризации:\n{text}"
-
+    "default_prompt": "You summarize Telegram chat messages. Keep message ids at the start of each line. Do not invent facts. Keep domain jargon (tickers, slang) when it carries meaning.",
+    "default_style": "XYZ has been dumped into the order book for a second day. Whales claimed the airdrop and are selling into spot. DAO snapshot rumor — no proof.",
+    "summarization_prompt": "Summarize the text. Do not draw conclusions. Keep the message id at the start of each line. If the same fact appears under several message ids, keep only the first id. Put external links at the end of the line. Remove filler lines that only say there is no useful information, that people are arguing, or chatting unconstructively — but if the whole summary has no useful information, you may say that once. Style example (do not copy these lines into the summary): {style}\nText to summarize:\n{text}"
 }
-

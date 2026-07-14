@@ -1,3 +1,6 @@
-# Run as daemon
-# docker run -d -it --network host -v ./data:/app/data --name to_chat --restart always to_chat
-docker run -d -it --network host -v "$(pwd)/data:/app/data" --name to_chat --restart always to_chat
+# Run with data/ mounted for config + Telethon session files
+docker run -d \
+  --name telegram-summarizer \
+  --restart always \
+  -v "$(pwd)/data:/app/data" \
+  telegram-summarizer

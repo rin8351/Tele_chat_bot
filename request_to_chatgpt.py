@@ -6,6 +6,7 @@ import openai_async
 import datetime
 import json
 import os
+import time
 import httpx
 import logging
 
@@ -13,7 +14,152 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-async def send_request_to_chatgpt(result_queue,constraints,filtered_data,style):
+MAX_CHARS_PER_BATCH = 6500
+MAX_CHARS_PER_REQUEST = 2000
+MAX_BATCHES = 10
+
+
+def _hard_cut(text, max_chars):
+    """Cut on spaces when nothing softer works; avoid mid-word cuts when possible."""
+    parts = []
+    rest = text
+    while rest:
+        if len(rest) <= max_chars:
+            parts.append(rest)
+            break
+        cut = rest.rfind(' ', 0, max_chars)
+        if cut <= 0:
+            cut = max_chars
+        parts.append(rest[:cut].rstrip())
+        rest = rest[cut:].lstrip()
+    return parts
+
+
+def _split_long_unit(text, max_chars):
+    """Split one oversized block: paragraphs -> lines -> sentences -> hard cut."""
+    if len(text) <= max_chars:
+        return [text]
+
+    pieces = []
+    for paragraph in re.split(r'\n\s*\n', text):
+        paragraph = paragraph.strip()
+        if paragraph:
+            pieces.append(paragraph)
+
+    if len(pieces) <= 1:
+        pieces = [line for line in text.splitlines() if line.strip()] or [text]
+
+    result = []
+    for piece in pieces:
+        if len(piece) <= max_chars:
+            result.append(piece)
+            continue
+        sentences = re.split(r'(?<=[.!?…])\s+', piece)
+        for sentence in sentences:
+            sentence = (sentence or '').strip()
+            if not sentence:
+                continue
+            if len(sentence) <= max_chars:
+                result.append(sentence)
+            else:
+                result.extend(_hard_cut(sentence, max_chars))
+
+    return result
+
+
+def pack_text_units(units, max_chars):
+    """
+    Pack whole text units into chunks under max_chars.
+    Never starts a new unit mid-way; oversized units are split carefully first.
+    """
+    chunks = []
+    current = []
+    current_len = 0
+
+    for unit in units:
+        unit = (unit or '').strip()
+        if not unit:
+            continue
+
+        parts = [unit] if len(unit) <= max_chars else _split_long_unit(unit, max_chars)
+        for part in parts:
+            extra = len(part) + (1 if current else 0)  # newline join
+            if current and current_len + extra > max_chars:
+                chunks.append('\n'.join(current))
+                current = [part]
+                current_len = len(part)
+            else:
+                current.append(part)
+                current_len += extra
+
+    if current:
+        chunks.append('\n'.join(current))
+    return chunks
+
+
+def format_message_unit(message, id_to_message):
+    """One Telegram message as a single text unit (kept whole when packing)."""
+    lines = []
+    reply_to = message.get('reply_to_msg_id')
+    if reply_to is not None:
+        replied = id_to_message.get(reply_to)
+        if replied is not None:
+            lines.append(f" ответ на : {replied.get('text') or ''}")
+    lines.append(f"{message['id']}: {message.get('text') or ''}")
+    return '\n'.join(lines)
+
+
+def pack_messages_into_batches(messages, max_chars=MAX_CHARS_PER_BATCH, max_batches=MAX_BATCHES):
+    """Group messages into batches without splitting a message across batches."""
+    batches = []
+    current = []
+    current_len = 0
+    id_to_message = {m['id']: m for m in messages}
+
+    for message in messages:
+        unit = format_message_unit(message, id_to_message)
+        unit_len = len(unit)
+        extra = unit_len + (1 if current else 0)
+
+        if current and current_len + extra > max_chars:
+            batches.append(current)
+            if len(batches) >= max_batches:
+                return batches
+            current = [message]
+            current_len = unit_len
+        else:
+            current.append(message)
+            current_len += extra
+
+    if current and len(batches) < max_batches:
+        batches.append(current)
+    return batches
+
+
+async def send_request_to_chatgpt(constraints, filtered_data, style):
+    """
+    Summarize filtered Telegram messages.
+
+    Returns (summary_text, status_note, metrics).
+    metrics is a dict on success / partial runs, or None on hard early failures.
+    """
+    started = time.monotonic()
+
+    def _empty_metrics(message_count=0):
+        return {
+            "messages": message_count,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "api_calls": 0,
+            "duration_seconds": round(time.monotonic() - started, 1),
+            "tokens_estimated": False,
+        }
+
+    if not filtered_data:
+        # EN: No messages in the selected time window.
+        note = "Нет сообщений за выбранный интервал."
+        return note, note, _empty_metrics(0)
 
     path = 'data'
     file = 'data.json'
@@ -22,39 +168,86 @@ async def send_request_to_chatgpt(result_queue,constraints,filtered_data,style):
         data = json.load(f)
     OPENAI_API_KEY = data['OPENAI_API_KEY']
     if OPENAI_API_KEY == "":
-        raise Exception("Необходимо установить API ключ OpenAI")
-    
-    # Load summarization prompt from config with default
-    summarization_prompt_template = data.get('summarization_prompt', 
-        "Сделать суммаризацию текста. Не делать выводов. Сохранять id сообщения в начале строки. " +
-        "Если информация дается больше чем в одном id сообщении, то оставлять только первый id. " +
-        "Ссылки на внешние ресурсы нужно ставить в конце строки. Убрать все фразы, где говорится " +
-        "что Нет полезной информации, что в чате ругаются или болтают неконструктивно и так далее. " +
-        "Но если в суммаризации совсем нет никакой полезной информации, тогда можно написать один раз об этом. " +
-        "Пример стиля и желаемого результата: {style} Строки из примера нельзя повторять и включать в суммаризацию. " +
-        "Вот текст для суммаризации:\n{text}")
+        raise Exception("Необходимо установить API ключ OpenAI")  # EN: OpenAI API key must be set
 
-    # Формирование текста чата
+    # Fallback summarization prompt (Russian — original client language).
+    # EN: Summarize; no conclusions; keep message id at line start; if several ids share
+    # one fact keep the first; external links at line end; drop "no useful info" filler;
+    # style sample is {style}; text is {text}. Prefer overriding via data.json.
+    summarization_prompt_template = data.get(
+        'summarization_prompt',
+        "Сделать суммаризацию текста. Не делать выводов. Сохранять id сообщения в начале строки. "
+        "Если информация дается больше чем в одном id сообщении, то оставлять только первый id. "
+        "Ссылки на внешние ресурсы нужно ставить в конце строки. Убрать все фразы, где говорится "
+        "что Нет полезной информации, что в чате ругаются или болтают неконструктивно и так далее. "
+        "Но если в суммаризации совсем нет никакой полезной информации, тогда можно написать один раз об этом. "
+        "Пример стиля и желаемого результата: {style} Строки из примера нельзя повторять и включать в суммаризацию. "
+        "Вот текст для суммаризации:\n{text}",
+    )
+
+    usage_totals = {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
+    api_calls = 0
+    tokens_estimated = False
+
+    def _estimate_tokens(text):
+        # Rough fallback when the API response has no usage field (~4 chars/token).
+        return max(1, len(text or "") // 4)
+
+    def _add_usage(usage, prompt_text='', completion_text=''):
+        nonlocal api_calls, tokens_estimated
+        api_calls += 1
+        if usage and (
+            usage.get("prompt_tokens") is not None
+            or usage.get("completion_tokens") is not None
+            or usage.get("total_tokens") is not None
+        ):
+            usage_totals["prompt_tokens"] += int(usage.get("prompt_tokens") or 0)
+            usage_totals["completion_tokens"] += int(usage.get("completion_tokens") or 0)
+            total = usage.get("total_tokens")
+            if total is None:
+                total = (usage.get("prompt_tokens") or 0) + (usage.get("completion_tokens") or 0)
+            usage_totals["total_tokens"] += int(total)
+        else:
+            tokens_estimated = True
+            pt = _estimate_tokens(prompt_text)
+            ct = _estimate_tokens(completion_text)
+            usage_totals["prompt_tokens"] += pt
+            usage_totals["completion_tokens"] += ct
+            usage_totals["total_tokens"] += pt + ct
+
+    def _build_metrics():
+        return {
+            "messages": len(filtered_data),
+            "prompt_tokens": usage_totals["prompt_tokens"],
+            "completion_tokens": usage_totals["completion_tokens"],
+            "total_tokens": usage_totals["total_tokens"],
+            "api_calls": api_calls,
+            "duration_seconds": round(time.monotonic() - started, 1),
+            "tokens_estimated": tokens_estimated,
+        }
 
     def is_valid_api_key(my_api_key):
         try:
-            # Try listing models with the provided API key
             openai.Model.list(api_key=my_api_key)
             return True
-        except Exception as e:
-            # If an error occurs, the API key is likely invalid
+        except Exception:
             return False
 
     async def send_request_to_chatgpt_funk(api_key, request_text, constraints):
         if not is_valid_api_key(api_key):
-            return "Не удалось подключиться к серверу OpenAI. Проверьте API ключ."
+            return "Не удалось подключиться к серверу OpenAI. Проверьте API ключ."  # EN: Could not reach OpenAI. Check API key.
 
         prompt_text = [
             {"role": "system", "content": constraints},
-            {"role": "user", "content": request_text}
+            {"role": "user", "content": request_text},
         ]
-        max_retries=4
-        retry_interval=30
+        prompt_for_estimate = constraints + "\n" + request_text
+        max_retries = 4
+        retry_interval = 30
         retries = 0
         while retries < max_retries:
             try:
@@ -66,156 +259,97 @@ async def send_request_to_chatgpt(result_queue,constraints,filtered_data,style):
                         "messages": prompt_text,
                     },
                 )
-                return response.json()["choices"][0]["message"]['content']
+                body = response.json()
+                content = body["choices"][0]["message"]['content']
+                _add_usage(body.get("usage") or {}, prompt_for_estimate, content)
+                return content
 
             except openai.OpenAIError as e:
-                logger.error(f"Не удалось подключиться к серверу OpenAI. {e}")
+                logger.error(f"Не удалось подключиться к серверу OpenAI. {e}")  # EN: OpenAI connection failed
             except httpx.ReadTimeout:
-                logger.error(f"Не удалось подключиться к серверу OpenAI. Таймаут.")
+                logger.error("Не удалось подключиться к серверу OpenAI. Таймаут.")  # EN: OpenAI timeout
             except Exception as e:
-                logger.error(f"Не удалось подключиться к серверу OpenAI. {e}")
+                logger.error(f"Не удалось подключиться к серверу OpenAI. {e}")  # EN: OpenAI connection failed
             retries += 1
             if retries < max_retries:
                 await asyncio.sleep(retry_interval)
 
         return None
-    
-    async def summarize_text(text, max_tokens, api_key, constraints):
-        summary_parts = []
 
-        while len(text) > 0:
-            if len(text) <= max_tokens:
-                summary_parts.append(text)
-                break
-            else:
-                # Find the last space before max_tokens and split the string on that space
-                split_position = text.rfind(' ', 0, max_tokens)
-                summary_part = text[:split_position]
-                text = text[split_position + 1:]
-                summary_parts.append(summary_part)
+    async def summarize_text(text, max_chars, api_key, constraints):
+        # Re-summarize by whole lines/paragraphs when possible
+        units = [u for u in re.split(r'\n+', text) if u.strip()]
+        if not units:
+            units = [text]
+        text_chunks = pack_text_units(units, max_chars)
 
         summaries = []
-
-        for summary_part in summary_parts:
+        for summary_part in text_chunks:
             request_text = summarization_prompt_template.format(style=style, text=summary_part)
             summary = await send_request_to_chatgpt_funk(api_key, request_text, constraints)
-            summaries.append(summary)
+            if summary is not None:
+                summaries.append(summary)
 
         return summaries
 
-    def split_text_into_chunks(text, max_tokens):
-        sentences = re.split('(?<=[.!?]) +', text)
-        chunks = []
-        current_chunk = []
-
-        for sentence in sentences:
-            if len(" ".join(current_chunk + [sentence])) <= max_tokens:
-                current_chunk.append(sentence)
-            else:
-                chunks.append(" ".join(current_chunk))
-                current_chunk = [sentence]
-
-        if current_chunk:
-            chunks.append(" ".join(current_chunk))
-
-        return chunks
-
-    # Разделение списка сообщений на части
-    max_characters_per_chunk = 6500
-    chunks = []
-    current_chunk = []
-    current_chunk_characters = 0
-
-    for message in filtered_data:
-        text = message['text']
-        text_length = len(text)
-
-        if current_chunk_characters + text_length <= max_characters_per_chunk:
-            current_chunk.append(message)
-            current_chunk_characters += text_length
-        else:
-            chunks.append(current_chunk)
-            current_chunk = [message]
-            current_chunk_characters = text_length
-
-    # Добавляем последний фрагмент, если он не пуст
-    if current_chunk:
-        chunks.append(current_chunk)
-
-    max_chunks = 10  # adjust this value as needed
-    chunks = chunks[:max_chunks]
-
-    # Отправка запросов в ChatGPT
+    batches = pack_messages_into_batches(filtered_data)
     summaries = []
     count_all_chunks = 0
     count_of_none = 0
     result_of_none = ''
-    for chunk in chunks:
-        chat_text = ""
-        id_to_message = {message["id"]: message for message in chunk}
 
-        for message in chunk:
-            id_of_message = message['id']
-            reply_to_message_id = message.get('reply_to_message_id', None)
-            if reply_to_message_id is not None:
-                replied_message = id_to_message.get(reply_to_message_id, None)
-                if replied_message is not None:
-                    chat_text += f" ответ на : {replied_message['text']}\n"
+    for batch in batches:
+        id_to_message = {message["id"]: message for message in batch}
+        message_units = [format_message_unit(message, id_to_message) for message in batch]
+        text_chunks = pack_text_units(message_units, MAX_CHARS_PER_REQUEST)
 
-            chat_text += f"{id_of_message}: {message['text']}\n"
-        await asyncio.sleep(2) 
-        max_tokens_per_chunk = 2000  # adjust this value as needed to fit within the model's token limit
-        text_chunks = split_text_into_chunks(chat_text, max_tokens_per_chunk)
+        await asyncio.sleep(2)
         for text_chunk in text_chunks:
-            # написать какой по счету идет чанк
-            request_text = f"\n{text_chunk}."
-            summary = await  send_request_to_chatgpt_funk(OPENAI_API_KEY,request_text,constraints)
+            request_text = f"\n{text_chunk}"
+            summary = await send_request_to_chatgpt_funk(OPENAI_API_KEY, request_text, constraints)
             summaries.append(summary)
             if summary is None:
                 count_of_none += 1
             count_all_chunks += 1
-    # Фильтрация списка summaries
+
     filtered_summaries = [summary for summary in summaries if summary is not None]
 
-    # Объединение отфильтрованных выводов в одну строку
     if filtered_summaries:
         combined_summary = " ".join(filtered_summaries)
     else:
-        combined_summary = "НЕ удалось отправить запрос на сервер"
+        # EN: Failed to send the request to the server
+        return "НЕ удалось отправить запрос на сервер", "НЕ удалось отправить запрос на сервер", _build_metrics()
 
-    if combined_summary == "НЕ удалось отправить запрос на сервер":
-        result_queue.put(combined_summary)
-        return
-    
     if count_of_none > 0:
-        result_of_none=f"Количество неудачных запросов: {count_of_none} из {count_all_chunks}"
-    
+        # EN: Failed requests: {n} of {total}
+        result_of_none = f"Количество неудачных запросов: {count_of_none} из {count_all_chunks}"
+
     text = re.sub(r'\d+:\s*Нет полезной информации по криптовалютам', '', combined_summary)
     text = re.sub(r'\d+:\s*Нет полезной информации\.', '', text)
-
     combined_summary = re.sub(r'^\s*\r?\n', '', text, flags=re.MULTILINE)
 
-    # Отправка запросов в ChatGPT для суммаризации каждой части
-    final_result = await summarize_text(combined_summary, 2000, OPENAI_API_KEY, constraints)
-    final_result = " ".join(final_result)
-    # Loop until the final_result has less than 30 lines
+    final_parts = await summarize_text(combined_summary, 2000, OPENAI_API_KEY, constraints)
+    if not final_parts:
+        # EN: Failed to send the request to the server
+        return (
+            "НЕ удалось отправить запрос на сервер",
+            result_of_none or "НЕ удалось отправить запрос на сервер",
+            _build_metrics(),
+        )
+    final_result = " ".join(final_parts)
+
     while True:
-        # Count the number of lines in final_result
         num_lines = len(final_result.splitlines())
-        
-        # If the number of lines is less than 30, break the loop
         if num_lines < 30:
             break
-
-        # If the number of lines is 30 or more, process the final_result again
-        final_result = await summarize_text(final_result, 2000, OPENAI_API_KEY, constraints)
-        final_result = " ".join(final_result)
+        final_parts = await summarize_text(final_result, 2000, OPENAI_API_KEY, constraints)
+        if not final_parts:
+            break
+        final_result = " ".join(final_parts)
 
     start_time = datetime.datetime.fromisoformat(filtered_data[0]['date'])
     end_time = datetime.datetime.fromisoformat(filtered_data[-1]['date'])
     time_range_str = f"{start_time.strftime('%Y-%m-%d, %H:%M')} - {end_time.strftime('%H:%M')}"
-
-    # Объединение результатов с добавлением временного диапазона
     final_result = time_range_str + "\n" + final_result
 
-    result_queue.put((final_result, result_of_none))
+    return final_result, result_of_none, _build_metrics()
