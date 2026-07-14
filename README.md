@@ -29,6 +29,7 @@ Default schedule slots: `00:00`, `09:00`, `12:00`, `17:00`, `21:00`, `23:59` (ed
 - Runtime control: prompt, writing style, schedule
 - **Admin ACL** — only allowlisted Telegram user ids can run control commands
 - **Run metrics** posted to the digest channel after each summary (messages processed, token usage, duration)
+- **OpenAI retries** — up to 4 attempts per request (30s apart), with logging; failed runs do not advance the schedule window; admins are notified on failures / partial API errors
 - Docker volume mount for config and session files
 - Telethon login with SMS code file drop + optional 2FA
 

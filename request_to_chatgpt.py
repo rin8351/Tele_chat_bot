@@ -250,6 +250,7 @@ async def send_request_to_chatgpt(constraints, filtered_data, style):
         retry_interval = 30
         retries = 0
         while retries < max_retries:
+            attempt = retries + 1
             try:
                 response = await openai_async.chat_complete(
                     api_key,
@@ -262,18 +263,33 @@ async def send_request_to_chatgpt(constraints, filtered_data, style):
                 body = response.json()
                 content = body["choices"][0]["message"]['content']
                 _add_usage(body.get("usage") or {}, prompt_for_estimate, content)
+                if attempt > 1:
+                    logger.info("OpenAI request succeeded on attempt %s/%s", attempt, max_retries)
                 return content
 
             except openai.OpenAIError as e:
-                logger.error(f"Не удалось подключиться к серверу OpenAI. {e}")  # EN: OpenAI connection failed
+                logger.error(
+                    "OpenAI error on attempt %s/%s: %s", attempt, max_retries, e
+                )
             except httpx.ReadTimeout:
-                logger.error("Не удалось подключиться к серверу OpenAI. Таймаут.")  # EN: OpenAI timeout
+                logger.error(
+                    "OpenAI timeout on attempt %s/%s", attempt, max_retries
+                )
             except Exception as e:
-                logger.error(f"Не удалось подключиться к серверу OpenAI. {e}")  # EN: OpenAI connection failed
+                logger.error(
+                    "OpenAI unexpected error on attempt %s/%s: %s", attempt, max_retries, e
+                )
             retries += 1
             if retries < max_retries:
+                logger.warning(
+                    "Retrying OpenAI request in %ss (%s/%s left)",
+                    retry_interval,
+                    max_retries - retries,
+                    max_retries,
+                )
                 await asyncio.sleep(retry_interval)
 
+        logger.error("OpenAI request failed after %s attempts", max_retries)
         return None
 
     async def summarize_text(text, max_chars, api_key, constraints):

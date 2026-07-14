@@ -132,6 +132,25 @@ async def require_admin(message: types.Message) -> bool:
     return False
 
 
+async def notify_admin(text):
+    """
+    Log + Telegram-notify the configured admin (and operator chat if different).
+    Used for failures / degraded summarization runs.
+    """
+    logger.error("%s", text)
+    targets = set()
+    admin_id = _as_telegram_id(YOUR_ADMIN_CHAT_ID)
+    if admin_id is not None:
+        targets.add(admin_id)
+    if chat_id_in_bot is not None:
+        targets.add(chat_id_in_bot)
+    for target in targets:
+        try:
+            await bot.send_message(target, text)
+        except Exception as e:
+            logger.error("Failed to notify admin chat %s: %s", target, e)
+
+
 async def export_message_history(client, group_name, file_path2):
     utc = pytz.UTC
     start_date = datetime.datetime.now(utc) - datetime.timedelta(days=1)
@@ -328,6 +347,7 @@ async def send_prompt(telegram_client):
                 try:
                     # EN: Request sent, bot is busy
                     await bot.send_message(chat_id_in_bot, "Запрос отправлен, бот занят")
+                    window_from = last_filter_time
                     summary_with_links, result_of_none, metrics = await long_running_function(
                         last_filter_time, now, telegram_client
                     )
@@ -341,9 +361,16 @@ async def send_prompt(telegram_client):
                         or summary_with_links.startswith("Не удалось")
                     )
                     if is_error:
-                        # Avoid posting error strings into the digest channel
+                        # Avoid posting error strings into the digest channel.
+                        # Do NOT advance last_filter_time — next run can retry this window.
                         if summary_with_links != result_of_none:
                             await bot.send_message(chat_id_in_bot, summary_with_links)
+                        await notify_admin(
+                            # EN: Digest failed for window … — schedule cursor not advanced
+                            f"Сбой суммаризации за окно {window_from}–{now}.\n"
+                            f"{summary_with_links}\n"
+                            "Граница расписания не сдвинута — будет повтор при следующем запуске."
+                        )
                     else:
                         await bot.send_message(
                             CHANNEL_to_send, summary_with_links, parse_mode='Markdown'
@@ -352,15 +379,26 @@ async def send_prompt(telegram_client):
                         if metrics_text:
                             # Second message in the digest channel — keeps the summary itself clean
                             await bot.send_message(CHANNEL_to_send, metrics_text)
+                        if result_of_none:
+                            # Partial chunk failures — digest posted, but admin should know
+                            await notify_admin(
+                                # EN: Digest posted with partial API failures
+                                f"Дайджест за окно {window_from}–{now} отправлен, но были сбои API:\n"
+                                f"{result_of_none}"
+                            )
+                        # Advance schedule cursor only after a successful digest post
+                        last_filter_time = now
 
                     # EN: Request finished, bot is free
                     await bot.send_message(chat_id_in_bot, "Запрос выполнен, бот свободен")
-                    last_filter_time = now
                     await asyncio.sleep(60)
                 except Exception as e:
                     logger.exception("Summarization cycle failed: %s", e)
-                    # EN: Summarization error: …
-                    await bot.send_message(chat_id_in_bot, f"Ошибка при суммаризации: {e}")
+                    await notify_admin(
+                        # EN: Summarization error (exception). Schedule cursor not advanced.
+                        f"Ошибка при суммаризации: {e}\n"
+                        "Граница расписания не сдвинута — будет повтор при следующем запуске."
+                    )
                 finally:
                     bot_busy = False
         await asyncio.sleep(10)
