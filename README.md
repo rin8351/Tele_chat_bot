@@ -141,17 +141,3 @@ docker run -d --name telegram-summarizer \
 | `/set_prompt` / `/see_prompt` | Edit / view system prompt |
 | `/set_style` / `/see_style` | Edit / view style sample |
 | `/update_schedule` / `/see_schedule` | Edit / view `HH:MM` slots (`09:00, 12:00, 17:00`) |
-
-## Credentials cheat sheet
-
-1. **API ID / hash** — [my.telegram.org/apps](https://my.telegram.org/apps)
-2. **Bot token** — [@BotFather](https://t.me/botfather) → `/newbot`
-3. **Chat IDs** — helpers like [@userinfobot](https://t.me/userinfobot) / similar; for private links, `chat_origin_mess` is the id without the `-100` prefix used in `t.me/c/...`
-4. **OpenAI** — [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
-
-## Security
-
-- Never commit secrets or Telethon session files
-- Prefer a dedicated user account for scraping, not a personal main account
-- Treat digests as sensitive if the source group is private
-- Follow [Telegram Terms of Service](https://telegram.org/tos) and group privacy expectations
