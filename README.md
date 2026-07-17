@@ -155,7 +155,3 @@ docker run -d --name telegram-summarizer \
 - Prefer a dedicated user account for scraping, not a personal main account
 - Treat digests as sensitive if the source group is private
 - Follow [Telegram Terms of Service](https://telegram.org/tos) and group privacy expectations
-
-## License
-
-MIT — see [LICENSE](LICENSE).
