@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-MAX_CHARS_PER_BATCH = 6500
+MAX_CHARS_PER_BATCH = 6000
 MAX_CHARS_PER_REQUEST = 2000
 MAX_BATCHES = 10
 
